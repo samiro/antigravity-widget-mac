@@ -2,68 +2,84 @@ import AGUsageCore
 import AppKit
 import SwiftUI
 
-// MARK: - Background
-
-/// Native translucent HUD background (blurs what's behind the window).
-struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .hudWindow
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
-    }
-}
-
-// MARK: - Colors
+// MARK: - Apple Refined Palette
 
 enum Palette {
-    static let accent = Color(red: 0.42, green: 0.55, blue: 1.0)
-    static let warning = Color(red: 1.0, green: 0.72, blue: 0.25)
-    static let running = Color(red: 0.30, green: 0.85, blue: 0.55)
+    static let accent = Color(red: 0.20, green: 0.55, blue: 1.0)        // System Blue
+    static let warning = Color(red: 1.0, green: 0.62, blue: 0.10)       // System Orange
+    static let alert = Color(red: 1.0, green: 0.27, blue: 0.27)         // System Red
+    static let running = Color(red: 0.20, green: 0.82, blue: 0.48)       // System Green
 
-    static let input = Color(red: 0.40, green: 0.62, blue: 1.0)
-    static let cache = Color(red: 0.55, green: 0.48, blue: 0.95)
-    static let output = Color(red: 0.32, green: 0.85, blue: 0.75)
+    // Token telemetry split: Blue (input) -> Purple (cache) -> Mint (output)
+    static let input = Color(red: 0.25, green: 0.58, blue: 1.0)
+    static let cache = Color(red: 0.62, green: 0.42, blue: 0.95)
+    static let output = Color(red: 0.18, green: 0.82, blue: 0.72)
 
-    /// Stable color per model family / name.
+    /// Stable color per model family in clean Apple design language
     static func model(_ name: String) -> Color {
         let lower = name.lowercased()
-        let hue: Double
         if lower.contains("claude") || lower.contains("opus") || lower.contains("sonnet") {
-            hue = 0.06 // warm orange
+            return Color(red: 0.96, green: 0.55, blue: 0.28) // Warm coral
+        } else if lower.contains("argon") {
+            return Color(red: 0.18, green: 0.75, blue: 0.98) // Azure
+        } else if lower.contains("flash") {
+            return Color(red: 0.25, green: 0.60, blue: 1.0)  // Blue
         } else if lower.contains("gemini") {
-            hue = lower.contains("pro") ? 0.72 : 0.60 // purple for Pro, blue for Flash
+            return Color(red: 0.65, green: 0.45, blue: 0.95) // Purple
         } else if lower.contains("gpt") || lower.contains("oss") {
-            hue = 0.42
+            return Color(red: 0.20, green: 0.78, blue: 0.60) // Mint
         } else if name == unknownModel {
-            return .gray
+            return Color.gray
         } else {
-            // Deterministic hash → hue (avoid Swift's randomized hashValue).
             let sum = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
-            hue = Double(sum % 360) / 360
+            let hues = [0.58, 0.08, 0.78, 0.38, 0.88]
+            return Color(hue: hues[sum % hues.count], saturation: 0.65, brightness: 0.95)
         }
-        // Vary brightness by effort level so variants of the same family differ.
-        let brightness: Double = lower.contains("high") ? 1.0 : lower.contains("low") ? 0.72 : 0.86
-        return Color(hue: hue, saturation: 0.62, brightness: brightness)
     }
 
     static func source(_ source: AgySource) -> Color {
         switch source {
-        case .cli: return Color(red: 0.36, green: 0.80, blue: 0.60)
-        case .app: return Color(red: 0.95, green: 0.60, blue: 0.35)
-        case .ide: return Color(red: 0.45, green: 0.60, blue: 1.0)
+        case .cli: return Color(red: 0.22, green: 0.80, blue: 0.52)
+        case .app: return Color(red: 0.98, green: 0.60, blue: 0.25)
+        case .ide: return Color(red: 0.30, green: 0.62, blue: 1.0)
         }
     }
 }
 
-// MARK: - Small building blocks
+// MARK: - Quota Badge & UI Elements
+
+/// Clean macOS-styled quota badge.
+struct QuotaBadge: View {
+    let label: String
+    let percent: Int
+    let reset: Date?
+
+    var badgeColor: Color {
+        if percent > 40 { return Palette.running }
+        if percent >= 15 { return Palette.warning }
+        return Palette.alert
+    }
+
+    var body: some View {
+        HStack(spacing: 2.5) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .foregroundStyle(badgeColor)
+            Text(":")
+                .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.4))
+            Text("\(percent)%")
+                .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(badgeColor)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2.5)
+        .background(badgeColor.opacity(0.16), in: Capsule())
+        .help("\(label == "5H" ? "5-Hour" : "Weekly") Limit Remaining: \(percent)%\(reset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")")
+    }
+}
+
+typealias GlassQuotaBadge = QuotaBadge
 
 struct SectionHeader: View {
     let title: String
@@ -71,15 +87,14 @@ struct SectionHeader: View {
 
     var body: some View {
         HStack {
-            Text(title.uppercased())
-                .font(.system(size: 9.5, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
             Spacer()
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.45))
             }
         }
     }
@@ -88,17 +103,17 @@ struct SectionHeader: View {
 struct Pill: View {
     let systemImage: String
     let text: String
-    var tint: Color = .secondary
+    var tint: Color = Palette.accent
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.system(size: 9, weight: .bold))
-            Text(text).font(.system(size: 11, weight: .semibold).monospacedDigit())
+            Image(systemName: systemImage).font(.system(size: 8.5, weight: .bold))
+            Text(text).font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 6.5)
         .padding(.vertical, 2.5)
-        .background(tint.opacity(0.14), in: Capsule())
+        .background(tint.opacity(0.16), in: Capsule())
     }
 }
 
@@ -108,18 +123,22 @@ struct StatBlock: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                Circle().fill(color).frame(width: 6, height: 6)
-                Text(label).font(.system(size: 9.5, weight: .medium)).foregroundStyle(.secondary)
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(label)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
             }
-            Text(value).font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Horizontal stacked bar showing the input / cached / output split.
+/// Horizontal stacked bar showing the input / cached / output split with liquid sheen.
 struct TokenSplitBar: View {
     let totals: TokenTotals
 
@@ -133,7 +152,7 @@ struct TokenSplitBar: View {
             }
         }
         .frame(height: 5)
-        .background(Color.primary.opacity(0.08), in: Capsule())
+        .background(Color.white.opacity(0.08), in: Capsule())
         .clipShape(Capsule())
     }
 
@@ -145,7 +164,7 @@ struct TokenSplitBar: View {
     }
 }
 
-/// A row with a label, a proportional bar and trailing numbers.
+/// A row with a label, a proportional liquid bar and trailing numbers.
 struct ProportionRow: View {
     let color: Color
     let title: String
@@ -156,31 +175,41 @@ struct ProportionRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
                 Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 6)
                 Text(value)
-                    .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
                 Text(detail)
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9.5, weight: .regular, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.5))
                     .frame(minWidth: 44, alignment: .trailing)
             }
             GeometryReader { geo in
                 Capsule()
-                    .fill(color.opacity(0.85))
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.9), color.opacity(0.6)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .frame(width: max(3, geo.size.width * CGFloat(min(max(fraction, 0), 1))))
             }
-            .frame(height: 3)
-            .background(Color.primary.opacity(0.06), in: Capsule())
+            .frame(height: 3.5)
+            .background(Color.white.opacity(0.08), in: Capsule())
         }
     }
 }
 
-/// Minimal 14-day bar chart (no Charts dependency so it stays crisp at tiny sizes).
+/// Clean 14-day equalizer spectrum analyzer chart.
 struct DailyBars: View {
     let days: [DailyUsage]
     @State private var hovered: Date?
@@ -188,13 +217,15 @@ struct DailyBars: View {
     var body: some View {
         let maxValue = max(days.map(\.totals.total).max() ?? 0, 1)
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .bottom, spacing: 3) {
+            HStack(alignment: .bottom, spacing: 3.5) {
                 ForEach(days) { day in
                     let isToday = Calendar.current.isDateInToday(day.day)
                     let fraction = CGFloat(Double(day.totals.total) / Double(maxValue))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(isToday ? Palette.accent : Palette.accent.opacity(hovered == day.day ? 0.8 : 0.45))
-                        .frame(height: max(2, 34 * fraction))
+                    let barColor = isToday ? Palette.accent : Color.white.opacity(hovered == day.day ? 0.75 : 0.40)
+
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(barColor)
+                        .frame(height: max(3, 34 * fraction))
                         .frame(maxWidth: .infinity)
                         .onHover { inside in hovered = inside ? day.day : (hovered == day.day ? nil : hovered) }
                         .help("\(Self.dayFormatter.string(from: day.day)): \(UsageFormat.tokens(day.totals.total)) tokens · \(day.totals.requests) requests")
@@ -204,14 +235,16 @@ struct DailyBars: View {
             HStack {
                 if let hovered, let day = days.first(where: { $0.day == hovered }) {
                     Text("\(Self.dayFormatter.string(from: day.day)) · \(UsageFormat.tokens(day.totals.total)) · \(day.totals.requests) req")
+                        .foregroundStyle(.white.opacity(0.9))
                 } else if let first = days.first {
                     Text(Self.dayFormatter.string(from: first.day))
                     Spacer()
                     Text("Today")
+                        .foregroundStyle(Palette.accent)
                 }
             }
-            .font(.system(size: 9.5).monospacedDigit())
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 9, weight: .regular, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.45))
         }
     }
 
@@ -222,6 +255,7 @@ struct DailyBars: View {
     }()
 }
 
+/// Liquid Glass Sonar Ping Dot.
 struct PulsingDot: View {
     let color: Color
     var active = true
@@ -231,14 +265,16 @@ struct PulsingDot: View {
         ZStack {
             if active {
                 Circle()
-                    .fill(color.opacity(0.35))
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(pulse ? 1.25 : 0.6)
-                    .opacity(pulse ? 0 : 1)
+                    .stroke(color.opacity(0.4), lineWidth: 1)
+                    .frame(width: 14, height: 14)
+                    .scaleEffect(pulse ? 1.4 : 0.8)
+                    .opacity(pulse ? 0 : 0.9)
             }
-            Circle().fill(color).frame(width: 7, height: 7)
+            Circle()
+                .fill(color)
+                .frame(width: 6.5, height: 6.5)
         }
-        .frame(width: 12, height: 12)
+        .frame(width: 14, height: 14)
         .onAppear {
             guard active else { return }
             withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }

@@ -16,6 +16,7 @@ final class FloatingPanel: NSPanel {
         isFloatingPanel = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        isMovable = true
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
         backgroundColor = .clear
@@ -25,10 +26,16 @@ final class FloatingPanel: NSPanel {
         animationBehavior = .utilityWindow
 
         let hosting = NSHostingView(rootView: content())
-        hosting.sizingOptions = [] // we size the window from SwiftUI's reported size
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
         contentView = hosting
 
         restorePosition()
+        let initialSize = hosting.fittingSize
+        if initialSize.width > 10, initialSize.height > 10 {
+            fit(to: initialSize)
+        }
+        invalidateShadow()
 
         // Persist the position whenever the user drags the widget.
         NotificationCenter.default.addObserver(
@@ -42,6 +49,74 @@ final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    private var dragStartMouseLocation: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
+    private var isDraggingWindow = false
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            dragStartMouseLocation = NSEvent.mouseLocation
+            dragStartWindowOrigin = frame.origin
+            isDraggingWindow = false
+            super.sendEvent(event)
+
+        case .leftMouseDragged:
+            if let startMouse = dragStartMouseLocation, let startOrigin = dragStartWindowOrigin {
+                let currentMouse = NSEvent.mouseLocation
+                let deltaX = currentMouse.x - startMouse.x
+                let deltaY = currentMouse.y - startMouse.y
+
+                if !isDraggingWindow && (abs(deltaX) >= 3 || abs(deltaY) >= 3) {
+                    isDraggingWindow = true
+                }
+
+                if isDraggingWindow {
+                    var newOrigin = NSPoint(x: startOrigin.x + deltaX, y: startOrigin.y + deltaY)
+                    let targetScreen = NSScreen.screens.first { NSMouseInRect(currentMouse, $0.frame, false) }
+                        ?? screen
+                        ?? NSScreen.main
+                    if let visible = targetScreen?.visibleFrame {
+                        newOrigin.x = min(max(newOrigin.x, visible.minX), visible.maxX - frame.width)
+                        newOrigin.y = min(max(newOrigin.y, visible.minY), visible.maxY - frame.height)
+                    }
+                    setFrameOrigin(newOrigin)
+                    return
+                }
+            }
+            super.sendEvent(event)
+
+        case .leftMouseUp:
+            let wasDragging = isDraggingWindow
+            dragStartMouseLocation = nil
+            dragStartWindowOrigin = nil
+            isDraggingWindow = false
+
+            if wasDragging {
+                savePosition()
+                // Cancel any pending control highlights by sending mouse-up far outside the window bounds.
+                if let cancelEvent = NSEvent.mouseEvent(
+                    with: .leftMouseUp,
+                    location: NSPoint(x: -10000, y: -10000),
+                    modifierFlags: event.modifierFlags,
+                    timestamp: event.timestamp,
+                    windowNumber: windowNumber,
+                    context: nil,
+                    eventNumber: event.eventNumber,
+                    clickCount: 0,
+                    pressure: 0.0
+                ) {
+                    super.sendEvent(cancelEvent)
+                }
+                return
+            }
+            super.sendEvent(event)
+
+        default:
+            super.sendEvent(event)
+        }
+    }
+
     /// Resizes the panel keeping its top-left corner fixed, clamped to the screen.
     func fit(to size: CGSize) {
         guard size.width > 1, size.height > 1 else { return }
@@ -53,6 +128,7 @@ final class FloatingPanel: NSPanel {
         }
         if newFrame != frame {
             setFrame(newFrame, display: true, animate: false)
+            invalidateShadow()
         }
     }
 
