@@ -22,7 +22,7 @@ struct WidgetRootView: View {
         Group {
             if model.expanded {
                 ExpandedView(model: model, actions: actions)
-                    .frame(width: 345)
+                    .frame(width: model.widgetSize.expandedWidth)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             } else {
@@ -63,48 +63,52 @@ struct CompactView: View {
         let activeModel = model.activeCompactModelName
         let usage = model.activeCompactModelUsage
         let limits = model.activeModelQuota
+        let sz = model.widgetSize
 
-        HStack(spacing: 9) {
-            PulsingDot(color: statusColor, active: !snap.running.isEmpty || !snap.pendingApprovals.isEmpty)
+        HStack(spacing: sz == .large ? 12 : (sz == .small ? 7 : 9)) {
+            PulsingDot(color: statusColor, active: !snap.running.isEmpty || !snap.pendingApprovals.isEmpty, size: sz)
 
-            VStack(alignment: .leading, spacing: 2.5) {
-                HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: sz == .large ? 4.5 : (sz == .small ? 2.5 : 3.5)) {
+                // Line 1: Model name and level
+                HStack(spacing: sz == .large ? 6.5 : 5) {
                     Circle()
                         .fill(Palette.model(activeModel))
-                        .frame(width: 6.5, height: 6.5)
+                        .frame(width: sz.dotDiameter, height: sz.dotDiameter)
 
                     Text(UsageFormat.shortModel(activeModel))
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .font(.system(size: sz.modelNameFontSize, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                }
 
-                    // 5-Hour Limit Remaining
+                // Line 2: Progress bars
+                HStack(spacing: sz == .large ? 6.5 : 5) {
                     if let fiveH = limits.fiveHourPercent {
-                        GlassQuotaBadge(label: "5H", percent: fiveH, reset: limits.fiveHourReset)
+                        GlassQuotaBadge(label: "5H", percent: fiveH, reset: limits.fiveHourReset, size: sz)
                     }
 
-                    // Weekly Limit Remaining
                     if let weekly = limits.weeklyPercent {
-                        GlassQuotaBadge(label: "Wk", percent: weekly, reset: limits.weeklyReset)
+                        GlassQuotaBadge(label: "Wk", percent: weekly, reset: limits.weeklyReset, size: sz)
                     }
                 }
 
-                HStack(spacing: 4) {
+                // Line 3: Tokens and req
+                HStack(spacing: sz == .large ? 5 : 4) {
                     Text(usage.total > 0 ? UsageFormat.tokens(usage.total) : "0")
-                        .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
+                        .font(.system(size: sz.detailFontSize, weight: .medium, design: .rounded).monospacedDigit())
                         .foregroundStyle(.white.opacity(0.95))
                     Text("tokens")
-                        .font(.system(size: 9.5, weight: .regular))
+                        .font(.system(size: sz.detailFontSize, weight: .regular))
                         .foregroundStyle(.white.opacity(0.55))
                     Text("·")
                         .foregroundStyle(.white.opacity(0.3))
 
                     if usage.requests > 0 {
                         Text("\(usage.requests)")
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
+                            .font(.system(size: sz.detailFontSize, weight: .medium, design: .rounded).monospacedDigit())
                             .foregroundStyle(.white.opacity(0.95))
                         Text("req")
-                            .font(.system(size: 9.5, weight: .regular))
+                            .font(.system(size: sz.detailFontSize, weight: .regular))
                             .foregroundStyle(.white.opacity(0.55))
                         Text("·")
                             .foregroundStyle(.white.opacity(0.3))
@@ -112,7 +116,7 @@ struct CompactView: View {
 
                     if let countdown = limits.resetCountdownString {
                         Text(countdown)
-                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                            .font(.system(size: max(8, sz.detailFontSize - 0.5), weight: .regular, design: .rounded))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                 }
@@ -120,15 +124,30 @@ struct CompactView: View {
             }
 
             if !snap.running.isEmpty {
-                Pill(systemImage: "bolt.fill", text: "\(snap.running.count)", tint: Palette.running)
+                Pill(systemImage: "bolt.fill", text: "\(snap.running.count)", tint: Palette.running, size: sz)
                     .help("\(snap.running.count) conversation(s) running")
             }
             if !snap.pendingApprovals.isEmpty {
-                Pill(systemImage: "hand.raised.fill", text: "\(snap.pendingApprovals.count)", tint: Palette.warning)
+                Pill(systemImage: "hand.raised.fill", text: "\(snap.pendingApprovals.count)", tint: Palette.warning, size: sz)
                     .help("\(snap.pendingApprovals.count) tool call(s) waiting for approval")
             }
 
             Menu {
+                Section("Widget Size") {
+                    ForEach(WidgetSize.allCases) { s in
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                model.widgetSize = s
+                            }
+                        } label: {
+                            let prefix = model.widgetSize == s ? "✓ " : "   "
+                            Text("\(prefix)\(s.label)")
+                        }
+                    }
+                }
+
+                Divider()
+
                 Section("Select Model for Compact View") {
                     ForEach(model.availableModelOptions) { opt in
                         Button {
@@ -154,19 +173,19 @@ struct CompactView: View {
                 }
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
+                    .font(.system(size: sz.chevronIconSize, weight: .bold))
                     .foregroundStyle(.white.opacity(0.75))
-                    .frame(width: 20, height: 20)
+                    .frame(width: sz.chevronDiameter, height: sz.chevronDiameter)
                     .background(Color.white.opacity(0.12), in: Circle())
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Choose model for compact view (or expand)")
+            .help("Choose model or size (or expand)")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 11)
+        .padding(.horizontal, sz.compactHorizontalPadding)
+        .padding(.vertical, sz.compactVerticalPadding)
         .contentShape(Capsule())
         .onTapGesture(count: 2) { withAnimation(.snappy(duration: 0.2)) { model.expanded = true } }
     }
@@ -361,12 +380,12 @@ struct ExpandedView: View {
                             .foregroundStyle(.white.opacity(0.92))
                         Spacer()
                         if let f = group.fiveHourBucket {
-                            QuotaBadge(label: "5H", percent: f.remainingPercent, reset: f.resetTime)
+                            QuotaBadge(label: "5H", percent: f.remainingPercent, reset: f.resetTime, size: model.widgetSize)
                         } else if group.name.contains("Argon"), let gemini5h = snap.quota.geminiGroup?.fiveHourBucket {
-                            QuotaBadge(label: "5H", percent: gemini5h.remainingPercent, reset: gemini5h.resetTime)
+                            QuotaBadge(label: "5H", percent: gemini5h.remainingPercent, reset: gemini5h.resetTime, size: model.widgetSize)
                         }
                         if let w = group.weeklyBucket {
-                            QuotaBadge(label: "Wk", percent: w.remainingPercent, reset: w.resetTime)
+                            QuotaBadge(label: "Wk", percent: w.remainingPercent, reset: w.resetTime, size: model.widgetSize)
                         }
                     }
                     .padding(.horizontal, 9)
@@ -508,6 +527,9 @@ struct WidgetMenuItems: View {
     var actions: WidgetActions
 
     var body: some View {
+        Picker("Widget Size", selection: $model.widgetSize) {
+            ForEach(WidgetSize.allCases) { Text($0.label).tag($0) }
+        }
         Picker("Range", selection: $model.range) {
             ForEach(UsageRange.allCases) { Text($0.label).tag($0) }
         }

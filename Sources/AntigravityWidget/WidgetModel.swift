@@ -38,6 +38,141 @@ public struct CompactModelOption: Identifiable, Hashable {
     }
 }
 
+/// User-configurable size mode for the widget.
+public enum WidgetSize: String, CaseIterable, Identifiable, Sendable {
+    case small
+    case normal
+    case large
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .small: return "Small"
+        case .normal: return "Normal"
+        case .large: return "Large"
+        }
+    }
+
+    // MARK: - Typography
+
+    public var modelNameFontSize: CGFloat {
+        switch self {
+        case .small: return 10.5
+        case .normal: return 12.0
+        case .large: return 14.5
+        }
+    }
+
+    public var detailFontSize: CGFloat {
+        switch self {
+        case .small: return 8.5
+        case .normal: return 9.5
+        case .large: return 11.5
+        }
+    }
+
+    public var badgeLabelFontSize: CGFloat {
+        switch self {
+        case .small: return 8.0
+        case .normal: return 9.0
+        case .large: return 11.0
+        }
+    }
+
+    public var badgePercentFontSize: CGFloat {
+        switch self {
+        case .small: return 8.5
+        case .normal: return 9.5
+        case .large: return 12.0
+        }
+    }
+
+    // MARK: - Progress Bar Metrics (Focused on clarity & prominence)
+
+    public var progressBarWidth: CGFloat {
+        switch self {
+        case .small: return 2.2
+        case .normal: return 3.2
+        case .large: return 5.0
+        }
+    }
+
+    public var progressBarHeight: CGFloat {
+        switch self {
+        case .small: return 7.0
+        case .normal: return 9.5
+        case .large: return 14.0
+        }
+    }
+
+    public var progressBarSpacing: CGFloat {
+        switch self {
+        case .small: return 1.2
+        case .normal: return 1.8
+        case .large: return 2.5
+        }
+    }
+
+    public var progressBarCornerRadius: CGFloat {
+        switch self {
+        case .small: return 0.8
+        case .normal: return 1.2
+        case .large: return 2.0
+        }
+    }
+
+    // MARK: - Component Sizing & Padding
+
+    public var dotDiameter: CGFloat {
+        switch self {
+        case .small: return 5.5
+        case .normal: return 6.5
+        case .large: return 8.5
+        }
+    }
+
+    public var chevronDiameter: CGFloat {
+        switch self {
+        case .small: return 18
+        case .normal: return 20
+        case .large: return 25
+        }
+    }
+
+    public var chevronIconSize: CGFloat {
+        switch self {
+        case .small: return 7.5
+        case .normal: return 8.5
+        case .large: return 11.0
+        }
+    }
+
+    public var compactHorizontalPadding: CGFloat {
+        switch self {
+        case .small: return 16
+        case .normal: return 18
+        case .large: return 22
+        }
+    }
+
+    public var compactVerticalPadding: CGFloat {
+        switch self {
+        case .small: return 8
+        case .normal: return 10
+        case .large: return 13
+        }
+    }
+
+    public var expandedWidth: CGFloat {
+        switch self {
+        case .small: return 320
+        case .normal: return 345
+        case .large: return 395
+        }
+    }
+}
+
 /// Observable state shared by the floating widget and the menu bar item.
 @MainActor
 final class WidgetModel: ObservableObject {
@@ -46,6 +181,9 @@ final class WidgetModel: ObservableObject {
     /// Approvals that appeared since the previous refresh (used to flash / notify).
     @Published private(set) var newApprovals: [PendingApproval] = []
 
+    @Published var widgetSize: WidgetSize {
+        didSet { defaults.set(widgetSize.rawValue, forKey: Keys.widgetSize) }
+    }
     @Published var range: UsageRange {
         didSet { defaults.set(range.rawValue, forKey: Keys.range) }
     }
@@ -78,6 +216,7 @@ final class WidgetModel: ObservableObject {
     private var knownApprovalIDs = Set<String>()
 
     private enum Keys {
+        static let widgetSize = "widget.size"
         static let range = "widget.range"
         static let expanded = "widget.expanded"
         static let opacity = "widget.opacity"
@@ -87,6 +226,7 @@ final class WidgetModel: ObservableObject {
     }
 
     init() {
+        widgetSize = WidgetSize(rawValue: defaults.string(forKey: Keys.widgetSize) ?? "") ?? .normal
         range = UsageRange(rawValue: defaults.string(forKey: Keys.range) ?? "") ?? .today
         expanded = defaults.object(forKey: Keys.expanded) as? Bool ?? false
         opacity = defaults.object(forKey: Keys.opacity) as? Double ?? 1.0
