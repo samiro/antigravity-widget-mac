@@ -151,16 +151,16 @@ public enum WidgetSize: String, CaseIterable, Identifiable, Sendable {
     public var compactHorizontalPadding: CGFloat {
         switch self {
         case .small: return 16
-        case .normal: return 20
-        case .large: return 26
+        case .normal: return 18
+        case .large: return 22
         }
     }
 
     public var compactVerticalPadding: CGFloat {
         switch self {
-        case .small: return 9
-        case .normal: return 11
-        case .large: return 14
+        case .small: return 8
+        case .normal: return 10
+        case .large: return 13
         }
     }
 

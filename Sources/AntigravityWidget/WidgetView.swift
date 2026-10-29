@@ -68,7 +68,8 @@ struct CompactView: View {
         HStack(spacing: sz == .large ? 12 : (sz == .small ? 7 : 9)) {
             PulsingDot(color: statusColor, active: !snap.running.isEmpty || !snap.pendingApprovals.isEmpty, size: sz)
 
-            VStack(alignment: .leading, spacing: sz == .large ? 3.5 : 2.5) {
+            VStack(alignment: .leading, spacing: sz == .large ? 4.5 : (sz == .small ? 2.5 : 3.5)) {
+                // Line 1: Model name and level
                 HStack(spacing: sz == .large ? 6.5 : 5) {
                     Circle()
                         .fill(Palette.model(activeModel))
@@ -78,18 +79,20 @@ struct CompactView: View {
                         .font(.system(size: sz.modelNameFontSize, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                }
 
-                    // 5-Hour Limit Remaining
+                // Line 2: Progress bars
+                HStack(spacing: sz == .large ? 6.5 : 5) {
                     if let fiveH = limits.fiveHourPercent {
                         GlassQuotaBadge(label: "5H", percent: fiveH, reset: limits.fiveHourReset, size: sz)
                     }
 
-                    // Weekly Limit Remaining
                     if let weekly = limits.weeklyPercent {
                         GlassQuotaBadge(label: "Wk", percent: weekly, reset: limits.weeklyReset, size: sz)
                     }
                 }
 
+                // Line 3: Tokens and req
                 HStack(spacing: sz == .large ? 5 : 4) {
                     Text(usage.total > 0 ? UsageFormat.tokens(usage.total) : "0")
                         .font(.system(size: sz.detailFontSize, weight: .medium, design: .rounded).monospacedDigit())
