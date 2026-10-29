@@ -14,6 +14,8 @@ public struct UsageSnapshot: Sendable {
     /// Title of the conversation the latest event belongs to.
     public var latestConversationTitle: String?
     public var totalEvents: Int
+    /// Active quota limits from Antigravity (5-hour and weekly limits).
+    public var quota: QuotaSnapshot
 
     public var running: [ConversationInfo] { conversations.filter(\.isRunning) }
 
@@ -24,20 +26,30 @@ public struct UsageSnapshot: Sendable {
     public static let empty = UsageSnapshot(
         generatedAt: .distantPast, currentModel: nil, summaries: [:], conversations: [],
         pendingApprovals: [], approvalsToday: 0, latestEvent: nil, latestConversationTitle: nil,
-        totalEvents: 0)
+        totalEvents: 0, quota: .fallback)
 }
 
 /// Owns the incremental readers and produces snapshots. Call `snapshot()` from a
 /// single serial context (the widget uses a dedicated actor).
 public final class UsageMonitor {
     public let paths: AgyPaths
+    public let quotaMonitor: QuotaMonitor
+    private var cachedQuota: QuotaSnapshot
     private let index: UsageIndex
     private let logs: CLILogMonitor
 
     public init(paths: AgyPaths = AgyPaths()) {
         self.paths = paths
+        self.quotaMonitor = QuotaMonitor(paths: paths)
+        self.cachedQuota = .fallback
         self.index = UsageIndex(paths: paths)
         self.logs = CLILogMonitor(paths: paths)
+    }
+
+    public func refreshQuota(force: Bool = false) async -> QuotaSnapshot {
+        let fresh = await quotaMonitor.refresh(force: force)
+        cachedQuota = fresh
+        return fresh
     }
 
     public func snapshot(now: Date = Date()) -> UsageSnapshot {
@@ -75,7 +87,8 @@ public final class UsageMonitor {
             approvalsToday: logState.approvalsToday,
             latestEvent: latest,
             latestConversationTitle: latestTitle,
-            totalEvents: events.count
+            totalEvents: events.count,
+            quota: cachedQuota
         )
     }
 }

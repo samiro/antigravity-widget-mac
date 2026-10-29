@@ -318,3 +318,96 @@ func planner(_ input: Int?, _ cache: Int?, _ output: Int?, at date: String = "20
         #expect(snap.latestEvent?.contextTokens == 10_000)
     }
 }
+
+@Suite struct QuotaMonitorTests {
+    @Test func parsesQuotaJSONAndResolvesLimits() {
+        let jsonString = """
+        {
+          "conversation_id": "",
+          "status": "SUCCESS",
+          "response": "Gemini Models\\tWeekly Limit Remaining\\t75%\\n",
+          "command": {
+            "name": "usage",
+            "data": {
+              "description": "quota test",
+              "groups": [
+                {
+                  "name": "Gemini Models",
+                  "description": "Flash and Pro",
+                  "buckets": [
+                    {
+                      "id": "gemini-weekly",
+                      "name": "Weekly Limit Remaining",
+                      "window": "weekly",
+                      "remaining_fraction": 0.748,
+                      "reset_time": "2026-11-02T05:08:24Z"
+                    },
+                    {
+                      "id": "gemini-5h",
+                      "name": "Five Hour Limit Remaining",
+                      "window": "5h",
+                      "remaining_fraction": 0.828,
+                      "reset_time": "2026-10-28T07:53:29Z"
+                    }
+                  ]
+                },
+                {
+                  "name": "Claude and GPT models",
+                  "buckets": [
+                    {
+                      "id": "3p-weekly",
+                      "name": "Weekly Limit Remaining",
+                      "window": "weekly",
+                      "remaining_fraction": 0.488,
+                      "reset_time": "2026-11-03T20:53:35Z"
+                    },
+                    {
+                      "id": "3p-5h",
+                      "name": "Five Hour Limit Remaining",
+                      "window": "5h",
+                      "remaining_fraction": 1.0,
+                      "reset_time": "2026-10-28T08:40:18Z"
+                    }
+                  ]
+                },
+                {
+                  "name": "Gemini 4 Argon",
+                  "buckets": [
+                    {
+                      "id": "gemini-argon-wtu-weekly",
+                      "name": "Gemini 4 Argon Weekly Limit",
+                      "window": "weekly",
+                      "remaining_fraction": 0.142,
+                      "reset_time": "2026-11-02T05:33:42Z"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """
+
+        let snapshot = QuotaMonitor.parseJSON(Data(jsonString.utf8))
+        #expect(snapshot != nil)
+        guard let snapshot else { return }
+
+        // Test Gemini 4 Argon limits (Argon weekly: 14%, shares Gemini 5H: 83%)
+        let argonLimits = snapshot.limits(for: "Gemini 4 Argon (Medium)")
+        #expect(argonLimits.groupName == "Gemini 4 Argon")
+        #expect(argonLimits.weeklyPercent == 14)
+        #expect(argonLimits.fiveHourPercent == 83)
+
+        // Test standard Gemini models (Weekly: 75%, 5H: 83%)
+        let geminiLimits = snapshot.limits(for: "Gemini 3.8 Flash (High)")
+        #expect(geminiLimits.groupName == "Gemini Models")
+        #expect(geminiLimits.weeklyPercent == 75)
+        #expect(geminiLimits.fiveHourPercent == 83)
+
+        // Test Claude models (Weekly: 49%, 5H: 100%)
+        let claudeLimits = snapshot.limits(for: "Claude Opus 5.5 (Medium)")
+        #expect(claudeLimits.groupName == "Claude & GPT")
+        #expect(claudeLimits.weeklyPercent == 49)
+        #expect(claudeLimits.fiveHourPercent == 100)
+    }
+}

@@ -25,10 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openTranscript: { [weak self] in self?.reveal($0) }
         )
 
+        sizeRelay.onChange = { [weak self] size in self?.panel?.fit(to: size) }
         panel = FloatingPanel { [model, sizeRelay] in
             WidgetRootView(model: model, sizeRelay: sizeRelay, actions: actions)
         }
-        sizeRelay.onChange = { [weak self] size in self?.panel.fit(to: size) }
+        if let fit = panel.contentView?.fittingSize, fit.width > 10, fit.height > 10 {
+            panel.fit(to: fit)
+        }
 
         setUpStatusItem()
         setUpNotifications()
@@ -40,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.$range
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.updateStatusItem() } }
+            .store(in: &cancellables)
+        model.$selectedCompactModel
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
         model.$newApprovals
             .receive(on: RunLoop.main)
@@ -95,13 +102,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Antigravity usage")
         image?.isTemplate = pending == 0
         button.image = pending > 0 ? image?.withSymbolConfiguration(.init(paletteColors: [.systemOrange])) : image
-        var title = " " + UsageFormat.tokens(model.summary.totals.total)
+
+        let limits = model.activeModelQuota
+        var title = ""
+        if let fiveH = limits.fiveHourPercent, let weekly = limits.weeklyPercent {
+            title = " 5H: \(fiveH)% · Wk: \(weekly)%"
+        } else if let fiveH = limits.fiveHourPercent {
+            title = " 5H: \(fiveH)%"
+        } else if let weekly = limits.weeklyPercent {
+            title = " Wk: \(weekly)%"
+        } else {
+            title = " " + String(format: "%.0f%%", model.activeModelPercentRest)
+        }
+
         if pending > 0 { title += " · \(pending)" }
         button.title = model.hasLoaded ? title : ""
         button.toolTip = [
-            "Antigravity — \(model.range.label)",
-            snap.currentModel.map { "Model: \($0)" },
-            "\(model.summary.totals.requests) requests",
+            "Antigravity Quota & Usage — \(model.range.label)",
+            "Active Model: \(model.activeCompactModelName) (\(limits.groupName))",
+            limits.fiveHourPercent.map { "5-Hour Limit Remaining: \($0)%\(limits.fiveHourReset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")" },
+            limits.weeklyPercent.map { "Weekly Limit Remaining: \($0)%\(limits.weeklyReset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")" },
+            "Tokens (\(model.range.label)): \(UsageFormat.tokens(model.activeCompactModelUsage.total)) · \(model.activeCompactModelUsage.requests) requests",
+            "Total all models: \(UsageFormat.tokens(model.summary.totals.total))",
             snap.running.isEmpty ? nil : "\(snap.running.count) running",
             pending > 0 ? "\(pending) waiting for approval" : nil,
         ].compactMap { $0 }.joined(separator: "\n")
@@ -119,13 +141,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        info("Model: \(snap.currentModel ?? "unknown")")
-        info("\(model.range.label): \(UsageFormat.tokens(summary.totals.total)) tokens · \(summary.totals.requests) requests")
-        for m in summary.byModel.prefix(5) {
-            info("   \(m.model) — \(m.totals.total > 0 ? UsageFormat.tokens(m.totals.total) : "\(m.totals.requests) req")")
+        info("Model: \(model.activeCompactModelName)")
+        let limits = model.activeModelQuota
+        if let fiveH = limits.fiveHourPercent {
+            info("5-Hour Limit Remaining: \(fiveH)%\(limits.fiveHourReset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")")
         }
-        if !snap.running.isEmpty { info("\(snap.running.count) conversation(s) running") }
-        if !snap.pendingApprovals.isEmpty { info("⚠︎ \(snap.pendingApprovals.count) waiting for approval") }
+        if let weekly = limits.weeklyPercent {
+            info("Weekly Limit Remaining: \(weekly)%\(limits.weeklyReset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")")
+        }
+        info("\(model.range.label): \(UsageFormat.tokens(model.activeCompactModelUsage.total)) tokens · \(model.activeCompactModelUsage.requests) requests")
+        info("Total all models: \(UsageFormat.tokens(summary.totals.total)) tokens · \(summary.totals.requests) requests")
+        menu.addItem(.separator())
+
+        info("Quota Pools Remaining:")
+        for group in snap.quota.groups {
+            var parts: [String] = []
+            if let f = group.fiveHourBucket?.remainingPercent {
+                parts.append("5H: \(f)%")
+            } else if group.name.contains("Argon"), let gf = snap.quota.geminiGroup?.fiveHourBucket?.remainingPercent {
+                parts.append("5H: \(gf)% (shared)")
+            }
+            if let w = group.weeklyBucket?.remainingPercent {
+                parts.append("Weekly: \(w)%")
+            }
+            info("   \(group.name) — \(parts.joined(separator: " · "))")
+        }
         menu.addItem(.separator())
 
         let toggle = NSMenuItem(title: panel.isVisible ? "Hide Widget" : "Show Widget",
@@ -144,6 +184,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         rangeItem.submenu = rangeMenu
         menu.addItem(rangeItem)
+
+        let modelsItem = NSMenuItem(title: "Compact View Model", action: nil, keyEquivalent: "")
+        let modelsMenu = NSMenu()
+        let autoItem = NSMenuItem(title: "Auto-follow Active (\(snap.currentModel ?? "None"))",
+                                  action: #selector(selectCompactModelAction(_:)), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.representedObject = ""
+        autoItem.state = model.selectedCompactModel == nil ? .on : .off
+        modelsMenu.addItem(autoItem)
+        modelsMenu.addItem(.separator())
+
+        for opt in model.availableModelOptions {
+            let usageInfo = opt.tokens > 0 ? " (\(UsageFormat.tokens(opt.tokens)))" : ""
+            let item = NSMenuItem(title: "\(opt.name) — \(opt.limitsDescription)\(usageInfo)",
+                                  action: #selector(selectCompactModelAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = opt.name
+            item.state = opt.isSelected && model.selectedCompactModel != nil ? .on : .off
+            modelsMenu.addItem(item)
+        }
+        modelsItem.submenu = modelsMenu
+        menu.addItem(modelsItem)
 
         let compact = NSMenuItem(title: "Compact Widget", action: #selector(toggleCompact), keyEquivalent: "")
         compact.target = self
@@ -182,9 +244,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc private func selectCompactModelAction(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, !raw.isEmpty {
+            model.selectedCompactModel = raw
+        } else {
+            model.selectedCompactModel = nil
+        }
+    }
+
     @objc private func toggleCompact() { model.expanded.toggle() }
     @objc private func toggleNotify() { model.notifyOnApprovals.toggle() }
-    @objc private func refreshNow() { Task { await model.refresh() } }
+    @objc private func refreshNow() { Task { await model.refresh(forceQuota: true) } }
     @objc private func resetPosition() { panel.resetPosition(); setPanelVisible(true) }
     @objc private func openDataFolderAction() { openDataFolder() }
 
