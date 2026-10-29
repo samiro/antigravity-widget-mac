@@ -6,6 +6,38 @@ All data is read locally and strictly read-only from `~/.gemini` (`antigravity-c
 
 ---
 
+## Screenshots
+
+### Compact View (Normal Size)
+
+A minimal, translucent oval pill that floats above your workspace with the active model, segmented neon blue quota progress bars, and real-time token/request counters:
+
+<p align="center">
+  <img src="docs/screenshots/compact-view.png" alt="Antigravity Widget - Compact View (Normal Size)" width="420">
+</p>
+
+- **Line 1 — Model & Status**: Active model identifier and level indicator (`Gemini 3.8 Flash · Med`) with a pulsing activity dot.
+- **Line 2 — Quota Progress Bars**: Neon blue segmented progress bars showing consumed vs. remaining time for **5H** (5 bars, 98% remaining) and **Wk** (7 bars, 69% remaining) quota windows.
+- **Line 3 — Usage & Countdowns**: Total token burn, request count, and remaining reset countdowns (`38.3M tokens · 260 req · 5H: 4h 53m · Wk: 4d 9h`).
+- **Full Drag & Drop**: Click and drag from any part of the widget to reposition it across multiple monitors and Spaces.
+
+---
+
+### Expanded View (Normal Size)
+
+Double-click the compact pill or click the chevron to expand into the full telemetry dashboard:
+
+<p align="center">
+  <img src="docs/screenshots/expanded-view.png" alt="Antigravity Widget - Expanded View (Normal Size)" width="380">
+</p>
+
+- **14-Day Equalizer Chart**: Daily token usage sparkline with interactive hover breakdown.
+- **Quota Limit Pools**: Live segmented progress bars for 5-hour and weekly quota buckets across all model groups (Gemini, Claude, GPT).
+- **Model Breakdown**: Per-model token metrics, cache-hit percentages, and request volume.
+- **Active Sessions & Modals**: Instant visibility into running background tasks and tool-approval prompts waiting for confirmation.
+
+---
+
 ## Features
 
 - **Always-on-top Floating HUD (`NSPanel`)**

@@ -17,6 +17,30 @@ public struct UsageSnapshot: Sendable {
     /// Active quota limits from Antigravity (5-hour and weekly limits).
     public var quota: QuotaSnapshot
 
+    public init(
+        generatedAt: Date,
+        currentModel: String? = nil,
+        summaries: [UsageRange: UsageSummary],
+        conversations: [ConversationInfo],
+        pendingApprovals: [PendingApproval],
+        approvalsToday: Int,
+        latestEvent: UsageEvent? = nil,
+        latestConversationTitle: String? = nil,
+        totalEvents: Int,
+        quota: QuotaSnapshot
+    ) {
+        self.generatedAt = generatedAt
+        self.currentModel = currentModel
+        self.summaries = summaries
+        self.conversations = conversations
+        self.pendingApprovals = pendingApprovals
+        self.approvalsToday = approvalsToday
+        self.latestEvent = latestEvent
+        self.latestConversationTitle = latestConversationTitle
+        self.totalEvents = totalEvents
+        self.quota = quota
+    }
+
     public var running: [ConversationInfo] { conversations.filter(\.isRunning) }
 
     public func summary(_ range: UsageRange) -> UsageSummary {

@@ -237,6 +237,11 @@ final class WidgetModel: ObservableObject {
 
     var summary: UsageSummary { snapshot.summary(range) }
 
+    func applySnapshotForScreenshot(_ snapshot: UsageSnapshot) {
+        self.snapshot = snapshot
+        self.hasLoaded = true
+    }
+
     func start() {
         guard loop == nil else { return }
         // Run initial refresh with quota
