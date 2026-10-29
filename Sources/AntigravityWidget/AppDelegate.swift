@@ -44,6 +44,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.updateStatusItem() } }
             .store(in: &cancellables)
+        model.$widgetSize
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    if let panel = self?.panel, let hosting = panel.contentView {
+                        let fit = hosting.fittingSize
+                        if fit.width > 10, fit.height > 10 {
+                            panel.fit(to: fit)
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
         model.$selectedCompactModel
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
@@ -207,6 +220,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         modelsItem.submenu = modelsMenu
         menu.addItem(modelsItem)
 
+        let sizeItem = NSMenuItem(title: "Widget Size", action: nil, keyEquivalent: "")
+        let sizeMenu = NSMenu()
+        for size in WidgetSize.allCases {
+            let item = NSMenuItem(title: size.label, action: #selector(selectWidgetSizeAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = size.rawValue
+            item.state = size == model.widgetSize ? .on : .off
+            sizeMenu.addItem(item)
+        }
+        sizeItem.submenu = sizeMenu
+        menu.addItem(sizeItem)
+
         let compact = NSMenuItem(title: "Compact Widget", action: #selector(toggleCompact), keyEquivalent: "")
         compact.target = self
         compact.state = model.expanded ? .off : .on
@@ -236,6 +261,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(folder)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Antigravity Widget", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    @objc private func selectWidgetSizeAction(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let size = WidgetSize(rawValue: raw) {
+            model.widgetSize = size
+        }
     }
 
     @objc private func selectRange(_ sender: NSMenuItem) {

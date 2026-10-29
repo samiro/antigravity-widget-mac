@@ -48,34 +48,113 @@ enum Palette {
 
 // MARK: - Quota Badge & UI Elements
 
-/// Clean macOS-styled quota badge.
+/// Segmented bar indicating consumed vs remaining time window in neon blue.
+struct SegmentedQuotaBar: View {
+    let totalBars: Int
+    let filledBars: Int
+    var size: WidgetSize = .normal
+    var activeColor: Color = Color(red: 0.30, green: 0.82, blue: 1.0) // light neon blue (consumed time)
+    var inactiveColor: Color = Color(red: 0.22, green: 0.55, blue: 0.85).opacity(0.25) // opaque/dim blue (remaining time)
+
+    var body: some View {
+        HStack(spacing: size.progressBarSpacing) {
+            ForEach(0..<totalBars, id: \.self) { index in
+                let isFilled = index < filledBars
+                RoundedRectangle(cornerRadius: size.progressBarCornerRadius, style: .continuous)
+                    .fill(
+                        isFilled
+                            ? LinearGradient(
+                                colors: [
+                                    activeColor.opacity(0.95),
+                                    activeColor
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            : LinearGradient(
+                                colors: [
+                                    inactiveColor,
+                                    inactiveColor.opacity(0.8)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                    )
+                    .frame(width: size.progressBarWidth, height: size.progressBarHeight)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: size.progressBarCornerRadius, style: .continuous)
+                            .strokeBorder(
+                                isFilled ? Color.white.opacity(size == .large ? 0.35 : 0.15) : Color.clear,
+                                lineWidth: size == .large ? 0.7 : 0.5
+                            )
+                    )
+                    .shadow(
+                        color: isFilled && size == .large ? activeColor.opacity(0.4) : Color.clear,
+                        radius: 2,
+                        x: 0,
+                        y: 0
+                    )
+            }
+        }
+    }
+}
+
+/// Clean macOS-styled quota badge with segmented time-elapsed bars and quota percentage.
 struct QuotaBadge: View {
     let label: String
     let percent: Int
     let reset: Date?
+    var size: WidgetSize = .normal
 
-    var badgeColor: Color {
+    private var totalBars: Int {
+        label.contains("Wk") ? 7 : 5
+    }
+
+    private var filledBars: Int {
+        let totalSeconds: Double = label.contains("Wk") ? (7 * 86400) : (5 * 3600)
+        let fraction: Double
+        if let reset {
+            let remaining = max(0, reset.timeIntervalSince(Date()))
+            let elapsed = max(0, totalSeconds - remaining)
+            fraction = min(max(elapsed / totalSeconds, 0.0), 1.0)
+        } else {
+            fraction = min(max(Double(100 - percent) / 100.0, 0.0), 1.0)
+        }
+        return min(totalBars, max(0, Int(round(fraction * Double(totalBars)))))
+    }
+
+    var body: some View {
+        HStack(spacing: size == .large ? 5 : 3.5) {
+            Text(label)
+                .font(.system(size: size.badgeLabelFontSize, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+
+            SegmentedQuotaBar(
+                totalBars: totalBars,
+                filledBars: filledBars,
+                size: size
+            )
+
+            Text("\(percent)%")
+                .font(.system(size: size.badgePercentFontSize, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(percentColor)
+        }
+        .padding(.horizontal, size == .large ? 8 : (size == .small ? 5 : 6))
+        .padding(.vertical, size == .large ? 3.5 : (size == .small ? 2 : 2.5))
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .help(tooltipText)
+    }
+
+    private var percentColor: Color {
         if percent > 40 { return Palette.running }
         if percent >= 15 { return Palette.warning }
         return Palette.alert
     }
 
-    var body: some View {
-        HStack(spacing: 2.5) {
-            Text(label)
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(badgeColor)
-            Text(":")
-                .font(.system(size: 8.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.4))
-            Text("\(percent)%")
-                .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(badgeColor)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2.5)
-        .background(badgeColor.opacity(0.16), in: Capsule())
-        .help("\(label == "5H" ? "5-Hour" : "Weekly") Limit Remaining: \(percent)%\(reset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? "")")
+    private var tooltipText: String {
+        let unit = label.contains("Wk") ? "day(s)" : "hour(s)"
+        let resetStr = reset.map { " (resets in \(ModelQuotaLimits.formatCountdown($0)))" } ?? ""
+        return "\(label): \(filledBars)/\(totalBars) \(unit) elapsed · \(percent)% remaining\(resetStr)"
     }
 }
 
@@ -104,15 +183,16 @@ struct Pill: View {
     let systemImage: String
     let text: String
     var tint: Color = Palette.accent
+    var size: WidgetSize = .normal
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.system(size: 8.5, weight: .bold))
-            Text(text).font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+            Image(systemName: systemImage).font(.system(size: size.badgeLabelFontSize, weight: .bold))
+            Text(text).font(.system(size: size.badgePercentFontSize, weight: .semibold, design: .rounded).monospacedDigit())
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6.5)
-        .padding(.vertical, 2.5)
+        .padding(.horizontal, size == .large ? 8 : (size == .small ? 5 : 6.5))
+        .padding(.vertical, size == .large ? 3.5 : (size == .small ? 2 : 2.5))
         .background(tint.opacity(0.16), in: Capsule())
     }
 }
@@ -259,22 +339,26 @@ struct DailyBars: View {
 struct PulsingDot: View {
     let color: Color
     var active = true
+    var size: WidgetSize = .normal
     @State private var pulse = false
+
+    private var diameter: CGFloat { size.dotDiameter }
+    private var containerSize: CGFloat { size == .large ? 18 : (size == .small ? 12 : 14) }
 
     var body: some View {
         ZStack {
             if active {
                 Circle()
-                    .stroke(color.opacity(0.4), lineWidth: 1)
-                    .frame(width: 14, height: 14)
+                    .stroke(color.opacity(0.4), lineWidth: size == .large ? 1.5 : 1)
+                    .frame(width: containerSize, height: containerSize)
                     .scaleEffect(pulse ? 1.4 : 0.8)
                     .opacity(pulse ? 0 : 0.9)
             }
             Circle()
                 .fill(color)
-                .frame(width: 6.5, height: 6.5)
+                .frame(width: diameter, height: diameter)
         }
-        .frame(width: 14, height: 14)
+        .frame(width: containerSize, height: containerSize)
         .onAppear {
             guard active else { return }
             withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
