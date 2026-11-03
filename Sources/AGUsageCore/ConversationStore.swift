@@ -12,6 +12,17 @@ public struct ConversationInfo: Sendable, Hashable, Identifiable {
     public var isBusy: Bool
     public var workspace: String?
 
+    public init(id: String, source: AgySource, title: String, status: String, stepCount: Int, lastModified: Date, isBusy: Bool, workspace: String? = nil) {
+        self.id = id
+        self.source = source
+        self.title = title
+        self.status = status
+        self.stepCount = stepCount
+        self.lastModified = lastModified
+        self.isBusy = isBusy
+        self.workspace = workspace
+    }
+
     /// True while the agent is generating or executing.
     public var isRunning: Bool {
         isBusy || status.hasSuffix("RUNNING")
